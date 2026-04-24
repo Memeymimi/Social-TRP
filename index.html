@@ -1,312 +1,315 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Heart, Loader2, Copy, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thairath Plus - Editorial Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .selection-pink::selection { background-color: #fce7f3; }
+        .backdrop-text { line-height: 1.625; font-size: 1rem; }
+        textarea { line-height: 1.625; font-size: 1rem; }
+        mark { color: #dc2626; background-color: rgba(254, 226, 226, 0.7); border-radius: 2px; padding: 0 2px; }
+    </style>
+</head>
+<body class="min-h-screen bg-[#fdfafb] text-gray-800 selection-pink p-4 md:p-8">
 
-const App = () => {
-  // State Management
-  const [inputText, setInputText] = useState('');
-  const [activeTab, setActiveTab] = useState('facebook');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [copiedStates, setCopiedStates] = useState({});
-  const [warnings, setWarnings] = useState([]);
-  const [wrongWords, setWrongWords] = useState([]);
-
-  const backdropRef = useRef(null);
-
-  // Output States
-  const [outputs, setOutputs] = useState({
-    website: '',
-    facebook: '',
-    instagram: '',
-    infocus: ''
-  });
-
-  // Helper for word/char count
-  const getStats = (text) => {
-    // นับตัวอักษรแบบมาตรฐาน (รวมสระ วรรณยุกต์ การเว้นวรรค) แบบที่เว็บทั่วไปใช้
-    const charCount = text.length;
-    // นับคำภาษาไทยแบบคร่าวๆ (อิงตามการเว้นวรรคและกลุ่มคำ)
-    const wordCount = text.split(/[\s\n]+/).filter(w => w.trim().length > 0).length * 2; // Approximate multiplier for Thai words without dictionary
-    return { charCount, wordCount };
-  };
-
-  const handleCopy = (key, text) => {
-    navigator.clipboard.writeText(text);
-    setCopiedStates({ ...copiedStates, [key]: true });
-    setTimeout(() => {
-      setCopiedStates({ ...copiedStates, [key]: false });
-    }, 2000);
-  };
-
-  const handleOutputChange = (key, value) => {
-    setOutputs(prev => ({ ...prev, [key]: value }));
-  };
-
-  const handleScroll = (e) => {
-    if (backdropRef.current) {
-      backdropRef.current.scrollTop = e.target.scrollTop;
-    }
-  };
-
-  const renderHighlightedText = () => {
-    if (!wrongWords || wrongWords.length === 0) return inputText;
-    
-    // ดึงและเตรียมคำผิดเพื่อนำไปใช้ใน Regex (หนีอักขระพิเศษ)
-    const escapedWords = wrongWords.filter(w => w.trim()).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    if (escapedWords.length === 0) return inputText;
-
-    const regex = new RegExp(`(${escapedWords.join('|')})`, 'g');
-    const parts = inputText.split(regex);
-    
-    return parts.map((part, i) => {
-      if (wrongWords.includes(part)) {
-        // แก้ไขให้ตัวอักษรเป็นสีแดงชัดเจน พร้อมพื้นหลังสีแดงอ่อน
-        return <mark key={i} className="text-red-600 bg-red-100 rounded-sm px-0.5 bg-opacity-70">{part}</mark>;
-      }
-      return part;
-    });
-  };
-
-  const processText = async () => {
-    if (!inputText.trim()) {
-      setError('กรุณาวางข้อความต้นฉบับก่อนประมวลผล');
-      return;
-    }
-
-    setIsLoading(true);
-    setError('');
-    setWarnings([]);
-    setWrongWords([]);
-
-    const apiKey = ""; // API Key provided by the environment
-
-    const systemInstruction = `
-    คุณคือผู้ช่วยบรรณาธิการของ "Thairath Plus" มีหน้าที่จัดรูปแบบบทความต้นฉบับ 
-    ให้วิเคราะห์ข้อความที่ผู้ใช้ส่งให้ และตอบกลับเป็น JSON Format เท่านั้น โดยมีโครงสร้างดังนี้:
-    {
-      "warnings": ["พบคำว่า '...' (คาดว่าอาจจะเป็นคำว่า '...')"], // ค้นหาคำผิดภาษาไทยหรือคำที่น่าสงสัย ถ้าไม่มีให้คืนค่าเป็น array ว่าง []
-      "wrongWords": ["คำผิดที่1", "คำผิดที่2"], // สำคัญมาก: ต้องดึง 'คำที่พิมพ์ผิด' ตามที่ปรากฏเป๊ะๆ ในข้อความต้นฉบับออกมาเป็น Array เพื่อใช้ทำไฮไลต์ตัวอักษรสีแดง ถ้าไม่มีให้คืนค่าเป็น array ว่าง []
-      "cleanedText": "เนื้อหาต้นฉบับที่ตัดลิงก์อ้างอิงดิบๆ ท้ายบทความออกไปแล้ว (ห้ามแก้คำผิด ห้ามเปลี่ยนเนื้อหา ให้คงไว้ 100% เพียงแค่ลบ URL ลิงก์เปล่าๆ ท้ายเรื่องออก)",
-      "paragraphs": ["พารากราฟ 1", "พารากราฟ 2"], // แบ่งพารากราฟจากเนื้อหาเดิมให้อ่านง่ายขึ้น ห้ามแก้คำผิด ห้ามเปลี่ยนเนื้อหา ให้คงไว้ 100%
-      "hashtags": "#ThairathPlus #ไทยรัฐพลัส #แท็ก3 #แท็ก4", // สร้างแฮชแท็ก 5-8 แท็กตามเนื้อหา โดย 2 แท็กแรกต้องเป็น #ThairathPlus และ #ไทยรัฐพลัส เสมอ
-      "references": "Source (YEAR). TOPIC. LINK\\nSource2 (YEAR). TOPIC2. LINK2", // ค้นหาลิงก์อ้างอิงท้ายบทความ และจัดรูปแบบใหม่เป็น Source (YEAR). TOPIC. LINK ถ้าไม่มีให้เว้นว่าง
-      "inFocus": "• สรุปเนื้อหาข้อ 1 เป็นความเรียงต่อเนื่อง\\n• สรุปเนื้อหาข้อ 2 เป็นความเรียงต่อเนื่อง\\n• สรุปเนื้อหาข้อ 3 เป็นความเรียงต่อเนื่อง" // สรุปใจความ 3-4 ข้อ เป็น bullet โดยใช้เครื่องหมาย • (bullet) เท่านั้น ห้ามใช้ดอกจัน (*) ห้ามตั้งชื่อหัวข้อย่อย ห้ามมีเครื่องหมาย : เด็ดขาด
-    }
-    `;
-
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: inputText }] }],
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          generationConfig: {
-            responseMimeType: "application/json"
-          }
-        })
-      });
-
-      if (!response.ok) throw new Error('เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI');
-
-      const data = await response.json();
-      const aiResult = JSON.parse(data.candidates[0].content.parts[0].text);
-
-      setWarnings(aiResult.warnings || []);
-      setWrongWords(aiResult.wrongWords || []);
-
-      // --- Construct Outputs based on Rules ---
-
-      // 1. Website: Cleaned Text (no raw links) + References
-      let websiteOut = (aiResult.cleanedText || inputText.trim()) + "\n\n";
-      websiteOut += "อ้างอิง:\n" + (aiResult.references || "ไม่มีอ้างอิง");
-      
-      // 2. Facebook: Body with dots + Hashtags (No warnings output here anymore)
-      let fbOut = aiResult.paragraphs.join("\n.\n") + "\n.\n";
-      fbOut += aiResult.hashtags;
-
-      // 3. Instagram: Body (No dots) + Outro + Hashtags
-      let igOut = aiResult.paragraphs.join("\n\n") + "\n\n";
-      igOut += "อ่านบทความฉบับเต็มต่อที่เว็บไซต์/Facebook: Thairath Plus\n\n";
-      igOut += aiResult.hashtags;
-
-      // 4. In Focus: Summary (เอาคำว่า **In Focus** ออกตามคำขอ)
-      let inFocusOut = aiResult.inFocus;
-
-      setOutputs({
-        website: websiteOut,
-        facebook: fbOut,
-        instagram: igOut,
-        infocus: inFocusOut
-      });
-
-    } catch (err) {
-      setError(err.message || 'ระบบไม่สามารถประมวลผลได้ในขณะนี้');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const tabs = [
-    { id: 'website', label: 'Website', desc: 'เนื้อหาไร้ลิงก์ดิบ + อ้างอิง' },
-    { id: 'facebook', label: 'Facebook', desc: 'จุดคั่นบรรทัด + แท็ก' },
-    { id: 'instagram', label: 'Instagram', desc: 'นับคำ Real-time' },
-    { id: 'infocus', label: 'In Focus', desc: 'สรุปเนื้อหา 3-4 ข้อ' },
-  ];
-
-  return (
-    <div className="min-h-screen bg-[#fdfafb] text-gray-800 font-sans selection:bg-pink-100 p-4 md:p-8">
-      {/* Header - Brandy Melville minimal style */}
-      <header className="max-w-6xl mx-auto mb-8 flex flex-col items-center justify-center border-b border-pink-100 pb-6">
-        <div className="flex items-center gap-2 text-pink-500 mb-2">
-          <Heart size={16} fill="currentColor" className="opacity-70" />
-          <Heart size={12} fill="currentColor" className="opacity-50" />
-          <Heart size={16} fill="currentColor" className="opacity-70" />
+    <header class="max-w-6xl mx-auto mb-8 flex flex-col items-center justify-center border-b border-pink-100 pb-6">
+        <div class="flex items-center gap-2 text-pink-500 mb-2">
+            <i data-lucide="heart" class="w-4 h-4 fill-current opacity-70"></i>
+            <i data-lucide="heart" class="w-3 h-3 fill-current opacity-50"></i>
+            <i data-lucide="heart" class="w-4 h-4 fill-current opacity-70"></i>
         </div>
-        <h1 className="text-2xl tracking-widest uppercase font-light text-gray-900">
-          Thairath Plus
-        </h1>
-        <p className="text-xs tracking-widest text-gray-400 uppercase mt-2">Editorial Assistant</p>
-      </header>
+        <h1 class="text-2xl tracking-widest uppercase font-light text-gray-900">Thairath Plus</h1>
+        <p class="text-xs tracking-widest text-gray-400 uppercase mt-2">Editorial Assistant</p>
+    </header>
 
-      <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+    <main class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
         
-    {/* Left Column: Input */}
-    <section className="flex flex-col h-full">
-      {/* แจ้งเตือนคำผิด (แยกออกมาไว้ส่วนบนสุดของคอลัมน์) */}
-      {warnings.length > 0 && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-sm p-5 shadow-sm animate-in fade-in slide-in-from-top-2">
-          <h3 className="text-red-600 font-medium flex items-center gap-2 mb-3 text-sm uppercase tracking-wider">
-            <AlertCircle size={16} /> แจ้งเตือนคำที่อาจพิมพ์ผิด/ข้อสงสัย
-          </h3>
-          <ul className="list-disc list-inside text-sm text-red-500 space-y-1.5">
-            {warnings.map((w, i) => <li key={i}>{w}</li>)}
-          </ul>
-        </div>
-      )}
-
-      <label className="text-sm uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-2">
-        1. หน้าต่างแปะ Text
-        <span className="text-xs text-pink-400 normal-case bg-pink-50 px-2 py-0.5 rounded-full">Input</span>
-      </label>
-      <div className="relative flex-grow flex flex-col h-[500px] lg:h-full bg-white border border-pink-100 rounded-sm shadow-sm overflow-hidden focus-within:border-pink-300 focus-within:ring-1 focus-within:ring-pink-100 transition-all">
-        {/* Backdrop for Highlighting (โชว์ไฮไลต์สีแดงบนคำผิด) */}
-        <div
-          ref={backdropRef}
-          className="absolute inset-0 p-5 text-gray-800 whitespace-pre-wrap break-words overflow-hidden pointer-events-none"
-          style={{ fontFamily: 'inherit', fontSize: '1rem', lineHeight: '1.625' }}
-          aria-hidden="true"
-        >
-          {renderHighlightedText()}
-        </div>
-        {/* Actual Textarea (กล่องรับข้อความจริง) */}
-        <textarea
-          className="absolute inset-0 w-full h-full p-5 bg-transparent outline-none resize-none text-transparent caret-pink-500"
-          style={{ fontFamily: 'inherit', fontSize: '1rem', lineHeight: '1.625' }}
-          placeholder="วางเนื้อหาต้นฉบับที่นี่..."
-          value={inputText}
-          onScroll={handleScroll}
-          onChange={(e) => {
-            setInputText(e.target.value);
-            // เคลียร์ค่าไฮไลต์และการแจ้งเตือนอัตโนมัติเมื่อเริ่มพิมพ์แก้ไข
-            if (wrongWords.length > 0) setWrongWords([]);
-            if (warnings.length > 0) setWarnings([]);
-          }}
-        />
-      </div>
-      
-      {error && (
-        <div className="mt-3 text-red-500 text-sm flex items-center gap-1 bg-red-50 p-2 rounded border border-red-100">
-              <AlertTriangle size={14} /> {error}
+        <section class="flex flex-col h-full">
+            <div class="mb-4">
+                <label class="text-[10px] uppercase tracking-[0.2em] text-gray-400 mb-2 block">🔑 Gemini API Key</label>
+                <input type="password" id="apiKey" class="w-full p-3 bg-white border border-pink-100 rounded-sm text-sm focus:outline-none focus:border-pink-300 transition-all" placeholder="วาง API Key ของคุณที่นี่...">
             </div>
-          )}
 
-          <button
-            onClick={processText}
-            disabled={isLoading}
-            className="mt-6 w-full bg-pink-50 hover:bg-pink-100 text-pink-700 uppercase tracking-widest py-4 text-sm transition-colors border border-pink-200 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 rounded-sm"
-          >
-            {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Heart size={14} className="text-pink-400" />}
-            {isLoading ? 'กำลังประมวลผล...' : 'Process Text'}
-          </button>
+            <div id="warningBox" class="hidden mb-6 bg-red-50 border border-red-200 rounded-sm p-5 shadow-sm">
+                <h3 class="text-red-600 font-medium flex items-center gap-2 mb-3 text-sm uppercase tracking-wider">
+                    <i data-lucide="alert-circle" class="w-4 h-4"></i> แจ้งเตือนคำที่อาจพิมพ์ผิด/ข้อสงสัย
+                </h3>
+                <ul id="warningList" class="list-disc list-inside text-sm text-red-500 space-y-1.5"></ul>
+            </div>
+
+            <label class="text-sm uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-2">
+                1. หน้าต่างแปะ Text
+                <span class="text-xs text-pink-400 normal-case bg-pink-50 px-2 py-0.5 rounded-full">Input</span>
+            </label>
+
+            <div class="relative flex-grow flex flex-col h-[500px] lg:min-h-[600px] bg-white border border-pink-100 rounded-sm shadow-sm overflow-hidden focus-within:border-pink-300 focus-within:ring-1 focus-within:ring-pink-100 transition-all">
+                <div id="backdrop" class="backdrop-text absolute inset-0 p-5 text-gray-800 whitespace-pre-wrap break-words overflow-hidden pointer-events-none border border-transparent"></div>
+                <textarea id="inputText" class="absolute inset-0 w-full h-full p-5 bg-transparent outline-none resize-none text-transparent caret-pink-500" placeholder="วางเนื้อหาต้นฉบับที่นี่..."></textarea>
+            </div>
+            
+            <div id="errorMessage" class="hidden mt-3 text-red-500 text-sm flex items-center gap-1 bg-red-50 p-2 rounded border border-red-100">
+                <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i> <span id="errorText"></span>
+            </div>
+
+            <button id="processBtn" class="mt-6 w-full bg-pink-50 hover:bg-pink-100 text-pink-700 uppercase tracking-widest py-4 text-sm transition-colors border border-pink-200 disabled:opacity-50 flex justify-center items-center gap-2 rounded-sm">
+                <i data-lucide="heart" id="btnIcon" class="w-3.5 h-3.5 text-pink-400"></i>
+                <span id="btnText">Process Text</span>
+            </button>
         </section>
 
-        {/* Right Column: Outputs */}
-        <section className="flex flex-col h-full">
-          <div className="flex flex-wrap border-b border-pink-100 mb-4 gap-4 lg:gap-8">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`pb-3 text-sm uppercase tracking-wider transition-all relative ${
-                  activeTab === tab.id 
-                    ? 'text-pink-600 font-medium' 
-                    : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                {tab.label}
-                {activeTab === tab.id && (
-                  <span className="absolute bottom-0 left-0 w-full h-[1px] bg-pink-400"></span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex justify-between items-center mb-3">
-             <label className="text-xs text-gray-400 tracking-wider">
-               {tabs.find(t => t.id === activeTab)?.desc}
-             </label>
-             {outputs[activeTab] && (
-               <button 
-                  onClick={() => handleCopy(activeTab, outputs[activeTab])}
-                  className="text-xs flex items-center gap-1 text-pink-500 hover:text-pink-700 transition-colors"
-                >
-                  {copiedStates[activeTab] ? <CheckCircle2 size={14} /> : <Copy size={14} />}
-                  {copiedStates[activeTab] ? 'คัดลอกแล้ว' : 'คัดลอกข้อความ'}
+        <section class="flex flex-col h-full">
+            <div class="flex flex-wrap border-b border-pink-100 mb-4 gap-4 lg:gap-8">
+                <button onclick="switchTab('website')" id="tab-website" class="tab-btn pb-3 text-sm uppercase tracking-wider transition-all relative text-pink-600 font-medium">
+                    Website <span class="indicator absolute bottom-0 left-0 w-full h-[1px] bg-pink-400"></span>
                 </button>
-             )}
-          </div>
+                <button onclick="switchTab('facebook')" id="tab-facebook" class="tab-btn pb-3 text-sm uppercase tracking-wider transition-all relative text-gray-400 hover:text-gray-600">
+                    Facebook <span class="indicator hidden absolute bottom-0 left-0 w-full h-[1px] bg-pink-400"></span>
+                </button>
+                <button onclick="switchTab('instagram')" id="tab-instagram" class="tab-btn pb-3 text-sm uppercase tracking-wider transition-all relative text-gray-400 hover:text-gray-600">
+                    Instagram <span class="indicator hidden absolute bottom-0 left-0 w-full h-[1px] bg-pink-400"></span>
+                </button>
+                <button onclick="switchTab('infocus')" id="tab-infocus" class="tab-btn pb-3 text-sm uppercase tracking-wider transition-all relative text-gray-400 hover:text-gray-600">
+                    In Focus <span class="indicator hidden absolute bottom-0 left-0 w-full h-[1px] bg-pink-400"></span>
+                </button>
+            </div>
 
-          <div className="relative flex-grow flex flex-col">
-            {activeTab === 'instagram' && !isLoading && (
-              <div className="mb-4 flex flex-col items-center justify-center bg-pink-50/50 py-5 px-6 rounded-sm border border-pink-100">
-                <div className="flex items-baseline gap-6 md:gap-10">
-                  <div className="text-center flex items-baseline gap-2">
-                    <span className="text-4xl md:text-5xl font-light text-pink-500">{getStats(outputs.instagram).wordCount}</span>
-                    <span className="text-sm uppercase tracking-widest text-pink-300">words</span>
-                  </div>
-                  <div className="w-px h-10 bg-pink-200/50"></div>
-                  <div className="text-center flex items-baseline gap-2">
-                    <span className="text-4xl md:text-5xl font-light text-pink-500">{getStats(outputs.instagram).charCount}</span>
-                    <span className="text-sm uppercase tracking-widest text-pink-300">characters</span>
-                  </div>
+            <div class="flex justify-between items-center mb-3">
+                <label id="tabDesc" class="text-xs text-gray-400 tracking-wider">เนื้อหาไร้ลิงก์ดิบ + อ้างอิง</label>
+                <button id="copyBtn" class="hidden text-xs flex items-center gap-1 text-pink-500 hover:text-pink-700 transition-colors">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i> คัดลอกข้อความ
+                </button>
+            </div>
+
+            <div id="igStats" class="hidden mb-4 flex flex-col items-center justify-center bg-pink-50/50 py-5 px-6 rounded-sm border border-pink-100">
+                <div class="flex items-baseline gap-6 md:gap-10">
+                    <div class="text-center flex items-baseline gap-2">
+                        <span id="wordCount" class="text-4xl md:text-5xl font-light text-pink-500">0</span>
+                        <span class="text-sm uppercase tracking-widest text-pink-300">words</span>
+                    </div>
+                    <div class="w-px h-10 bg-pink-200/50"></div>
+                    <div class="text-center flex items-baseline gap-2">
+                        <span id="charCount" class="text-4xl md:text-5xl font-light text-pink-500">0</span>
+                        <span class="text-sm uppercase tracking-widest text-pink-300">chars</span>
+                    </div>
                 </div>
-              </div>
-            )}
+            </div>
 
-            {isLoading ? (
-               <div className="w-full h-[500px] lg:h-full bg-pink-50/30 border border-pink-50 flex flex-col items-center justify-center text-pink-300 gap-3 rounded-sm shadow-inner">
-                 <Loader2 size={24} className="animate-spin" />
-                 <span className="text-xs uppercase tracking-widest">Generating Content...</span>
-               </div>
-            ) : (
-              <textarea
-                className="w-full h-[500px] lg:h-full flex-grow p-5 bg-white border border-pink-100 outline-none focus:border-pink-300 focus:ring-1 focus:ring-pink-100 resize-none rounded-sm text-gray-800 leading-loose transition-all shadow-sm"
-                value={outputs[activeTab]}
-                onChange={(e) => handleOutputChange(activeTab, e.target.value)}
-                placeholder="ผลลัพธ์จะแสดงที่นี่..."
-              />
-            )}
-          </div>
+            <div class="relative flex-grow">
+                <div id="loadingOverlay" class="hidden absolute inset-0 bg-pink-50/30 border border-pink-50 flex flex-col items-center justify-center text-pink-300 gap-3 rounded-sm shadow-inner z-10">
+                    <i data-lucide="loader-2" class="w-6 h-6 animate-spin"></i>
+                    <span class="text-[10px] uppercase tracking-[0.2em]">Generating Content...</span>
+                </div>
+                <textarea id="outputText" class="w-full h-[500px] lg:h-full min-h-[500px] p-5 bg-white border border-pink-100 outline-none focus:border-pink-300 focus:ring-1 focus:ring-pink-100 resize-none rounded-sm text-gray-800 leading-loose transition-all shadow-sm" placeholder="ผลลัพธ์จะแสดงที่นี่..."></textarea>
+            </div>
         </section>
+    </main>
 
-      </main>
+    <footer class="max-w-6xl mx-auto mt-12 text-center pb-8">
+        <p class="text-[10px] text-gray-300 uppercase tracking-widest">Internal Use Only · Built for Editorial Team</p>
+    </footer>
 
-      <footer className="max-w-6xl mx-auto mt-12 text-center pb-8">
-         <p className="text-[10px] text-gray-300 uppercase tracking-widest">Internal Use Only · Built for Editorial Team</p>
-      </footer>
-    </div>
-  );
-};
+    <script>
+        // Initialize Icons
+        lucide.createIcons();
 
-export default App;
+        // State Management
+        let currentTab = 'website';
+        let outputs = { website: '', facebook: '', instagram: '', infocus: '' };
+        let wrongWords = [];
+        let isProcessing = false;
+
+        const tabData = {
+            website: { desc: 'เนื้อหาไร้ลิงก์ดิบ + อ้างอิง' },
+            facebook: { desc: 'จุดคั่นบรรทัด + แท็ก' },
+            instagram: { desc: 'นับคำ Real-time' },
+            infocus: { desc: 'สรุปเนื้อหา 3-4 ข้อ' }
+        };
+
+        // DOM Elements
+        const inputArea = document.getElementById('inputText');
+        const backdrop = document.getElementById('backdrop');
+        const outputArea = document.getElementById('outputText');
+        const apiKeyInput = document.getElementById('apiKey');
+        const processBtn = document.getElementById('processBtn');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+
+        // Sync Scroll
+        inputArea.addEventListener('scroll', () => {
+            backdrop.scrollTop = inputArea.scrollTop;
+        });
+
+        // Handle Highlighting
+        inputArea.addEventListener('input', (e) => {
+            const text = e.target.value;
+            updateHighlight(text);
+            if(currentTab === 'instagram') updateStats(outputs.instagram);
+        });
+
+        function updateHighlight(text) {
+            if (wrongWords.length === 0) {
+                backdrop.innerText = text;
+                return;
+            }
+            const escaped = wrongWords.filter(w => w.trim()).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+            if (escaped.length === 0) {
+                backdrop.innerText = text;
+                return;
+            }
+            const regex = new RegExp(`(${escaped.join('|')})`, 'g');
+            const parts = text.split(regex);
+            backdrop.innerHTML = parts.map(part => 
+                wrongWords.includes(part) ? `<mark>${part}</mark>` : part
+            ).join('') + '\n'; // Add newline to fix sync
+        }
+
+        // Tab Switching
+        function switchTab(tabId) {
+            currentTab = tabId;
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('text-pink-600', 'font-medium');
+                btn.classList.add('text-gray-400');
+                btn.querySelector('.indicator').classList.add('hidden');
+            });
+            const activeBtn = document.getElementById('tab-' + tabId);
+            activeBtn.classList.add('text-pink-600', 'font-medium');
+            activeBtn.querySelector('.indicator').classList.remove('hidden');
+
+            document.getElementById('tabDesc').innerText = tabData[tabId].desc;
+            outputArea.value = outputs[tabId];
+
+            const igStats = document.getElementById('igStats');
+            if (tabId === 'instagram' && outputs.instagram) {
+                igStats.classList.remove('hidden');
+                updateStats(outputs.instagram);
+            } else {
+                igStats.classList.add('hidden');
+            }
+            
+            toggleCopyBtn();
+        }
+
+        function updateStats(text) {
+            const chars = text.length;
+            const words = text.split(/[\s\n]+/).filter(w => w.trim().length > 0).length * 2;
+            document.getElementById('charCount').innerText = chars;
+            document.getElementById('wordCount').innerText = words;
+        }
+
+        function toggleCopyBtn() {
+            const btn = document.getElementById('copyBtn');
+            if (outputs[currentTab]) btn.classList.remove('hidden');
+            else btn.classList.add('hidden');
+        }
+
+        // Copy Feature
+        document.getElementById('copyBtn').addEventListener('click', async function() {
+            await navigator.clipboard.writeText(outputs[currentTab]);
+            const originalHTML = this.innerHTML;
+            this.innerHTML = `<i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i> คัดลอกแล้ว`;
+            lucide.createIcons();
+            setTimeout(() => {
+                this.innerHTML = originalHTML;
+                lucide.createIcons();
+            }, 2000);
+        });
+
+        // AI Processing
+        processBtn.addEventListener('click', async () => {
+            const text = inputArea.value.trim();
+            const key = apiKeyInput.value.trim();
+
+            if (!text) return showError('กรุณาวางข้อความต้นฉบับก่อนประมวลผล');
+            if (!key) return showError('กรุณากรอก Gemini API Key');
+
+            setLoading(true);
+
+            const systemInstruction = `คุณคือผู้ช่วยบรรณาธิการของ "Thairath Plus" มีหน้าที่จัดรูปแบบบทความต้นฉบับ ให้วิเคราะห์ข้อความที่ผู้ใช้ส่งให้ และตอบกลับเป็น JSON Format เท่านั้น โดยมีโครงสร้างดังนี้:
+            {
+              "warnings": ["พบคำว่า '...'"],
+              "wrongWords": ["คำผิด1"],
+              "cleanedText": "เนื้อหาเดิมที่ลบ URL ลิงก์ท้ายเรื่องออก",
+              "paragraphs": ["พารากราฟ 1", "พารากราฟ 2"],
+              "hashtags": "#ThairathPlus #ไทยรัฐพลัส #แท็ก3",
+              "references": "Source (YEAR). TOPIC. LINK",
+              "inFocus": "• สรุปเนื้อหาข้อ 1\\n• สรุปเนื้อหาข้อ 2"
+            }`;
+
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: text }] }],
+                        systemInstruction: { parts: [{ text: systemInstruction }] },
+                        generationConfig: { responseMimeType: "application/json" }
+                    })
+                });
+
+                if (!response.ok) throw new Error('API Key ไม่ถูกต้อง หรือระบบขัดข้อง');
+
+                const data = await response.json();
+                const aiResult = JSON.parse(data.candidates[0].content.parts[0].text);
+
+                // Update Warnings
+                const warningBox = document.getElementById('warningBox');
+                const warningList = document.getElementById('warningList');
+                if (aiResult.warnings && aiResult.warnings.length > 0) {
+                    warningBox.classList.remove('hidden');
+                    warningList.innerHTML = aiResult.warnings.map(w => `<li>${w}</li>`).join('');
+                } else {
+                    warningBox.classList.add('hidden');
+                }
+
+                wrongWords = aiResult.wrongWords || [];
+                updateHighlight(text);
+
+                // Set Outputs
+                outputs.website = (aiResult.cleanedText || text) + "\n\nอ้างอิง:\n" + (aiResult.references || "ไม่มีอ้างอิง");
+                outputs.facebook = aiResult.paragraphs.join("\n.\n") + "\n.\n" + aiResult.hashtags;
+                outputs.instagram = aiResult.paragraphs.join("\n\n") + "\n\nอ่านต่อที่: Thairath Plus\n\n" + aiResult.hashtags;
+                outputs.infocus = aiResult.inFocus;
+
+                outputArea.value = outputs[currentTab];
+                if(currentTab === 'instagram') {
+                    document.getElementById('igStats').classList.remove('hidden');
+                    updateStats(outputs.instagram);
+                }
+                toggleCopyBtn();
+                lucide.createIcons();
+
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        function setLoading(loading) {
+            isProcessing = loading;
+            processBtn.disabled = loading;
+            document.getElementById('btnText').innerText = loading ? 'กำลังประมวลผล...' : 'Process Text';
+            document.getElementById('btnIcon').setAttribute('data-lucide', loading ? 'loader-2' : 'heart');
+            if(loading) {
+                document.getElementById('btnIcon').classList.add('animate-spin');
+                loadingOverlay.classList.remove('hidden');
+            } else {
+                document.getElementById('btnIcon').classList.remove('animate-spin');
+                loadingOverlay.classList.add('hidden');
+            }
+            lucide.createIcons();
+        }
+
+        function showError(msg) {
+            const errBox = document.getElementById('errorMessage');
+            document.getElementById('errorText').innerText = msg;
+            errBox.classList.remove('hidden');
+            setTimeout(() => errBox.classList.add('hidden'), 5000);
+        }
+    </script>
+</body>
+</html>
